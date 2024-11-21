@@ -4,131 +4,105 @@
 #include "ecran.h"
 #include "process.h"
 
-#include <inttypes.h>
-#include "cpu.h"
-#include "ecran.h"
-#include <string.h>
-
-uint16_t COLONNE=0;
-uint16_t LIGNE=0;
-
-uint16_t *ptr_mem(uint32_t lig, uint32_t col){
-    return (uint16_t*) (0xB8000 + 2 * (lig * 80 + col));
+unsigned short *ptr_mem(unsigned int lig, unsigned int col)
+{
+    return (unsigned short *)(0xB8000 + 2 * (80 * lig + col));
 }
 
-
-void ecrit_car(uint32_t lig, uint32_t col, char c, uint8_t bg_color, uint8_t color){
-    uint16_t* pointeur = ptr_mem(lig,col);
-    if (bg_color<=8)
-    {
-        if (color<=15)
-        {
-            *pointeur =(0b0<<15) + ((uint16_t)bg_color<<12)+ ((uint16_t) color<<8) + c;
-            // *pointeur = ((0b0<<3|bg_color&)<<3|color)<<8|c; // mets le chiffre en binaire puis le caractère (car 0 ou c =c)
-        }
-        else{
-            *pointeur =(0b0<<15) + ((uint16_t)bg_color<<12)+ ((uint16_t) 0b111<<8) + c;
-        }
-    }
-    else{
-        if (color<=15)
-        {
-            *pointeur =(0b0<<15) + ((uint16_t) color<<8) + c;
-            // *pointeur = ((0b0<<3|bg_color&)<<3|color)<<8|c; // mets le chiffre en binaire puis le caractère (car 0 ou c =c)
-        }
-        else{
-            *pointeur =(0b0<<15) + ((uint16_t) 0b111<<8)+ c;
-        }
-    }
-
+void ecrit_car(unsigned int lig, unsigned int col, char c, unsigned int fond, unsigned int police)
+{
+    unsigned short *ptr = ptr_mem(lig, col);
+    *ptr = (fond << 12) | (police << 8) | c;
 }
 
-void efface_ecran(void){
-    for (uint8_t i = 0; i < 25; i++)
+void efface_ecran(void)
+{
+    for (int i = 0; i < 80 * 25; i++)
     {
-        for (uint8_t j = 0; j < 80; j++)
-        {
-            // pour chaque caractères à l'ecran met un espace
-            ecrit_car(i,j,' ',0,15);
-        }
+        ecrit_car(i / 80, i % 80, ' ', 0, 15);
     }
 }
 
-void place_curseur(uint32_t lig, uint32_t col){
-    COLONNE=col;
-    LIGNE=lig;
-    uint16_t nombre = (uint16_t) (col+lig*80);
-    outb((uint8_t) 0x0F,(uint16_t) 0x3D4); // on envoie la partie basse
-    outb((uint8_t) nombre,(uint16_t) 0x3D5);
-    outb((uint8_t) 0x0E,(uint16_t) 0x3D4); // envoie la partie Haute
-    outb((uint8_t) (nombre >> 8),(uint16_t) 0x3D5);
+void place_curseur(unsigned int lig, unsigned int col)
+{
+    unsigned short pos = 80 * lig + col;
+    outb(0x0F, 0x3D4);
+    outb((unsigned char)(pos & 0xFF), 0x3D5);
+
+    outb(0x0E, 0x3D4);
+    outb((unsigned char)((pos >> 8) & 0xFF), 0x3D5);
 }
 
-void traite_car(char c){
-    if ((c>31) && (c<127)) // si c'est un caractère ASCII
+static unsigned int lig = 0;
+static unsigned int col = 0;
+
+void traite_car(char c)
+{
+    switch (c)
     {
-        ecrit_car(LIGNE,COLONNE,c,0,15);
-        COLONNE++;
-        if (COLONNE==80)
-        {
-            if (LIGNE>=24)
+        case '\b':
+            if (col != 0)
             {
-                defilement();
+                col--;
             }
-            traite_car(10);
-        }
+            break;
+        case '\t':
+            col = (col + 8) % 80;
+            break;
+        case '\n':
+            col = 0;
+            lig = (lig +1) % 25;
+            break;
+        case '\f':
+            efface_ecran();
+            col = 0;
+            lig = 0;
+            break;
+        case '\r':
+            col = 0;
+            break;
+        default:
+            ecrit_car(lig, col, c, 0, 15);
+            col++;
+            break;
     }
-    else{
-        switch (c)
-        {
-            case 8: // \b : Recule le curseur d’une colonne (si colonne̸ = 0)
-                if(COLONNE!=0){
-                    place_curseur(LIGNE,COLONNE-1);
-                }
-                break;
-            case 9: // \t Avance à la prochaine tabulation (colonnes 0, 8, 16, ..., 72, 79)
-                if(COLONNE<80){
-                    place_curseur(LIGNE,(((COLONNE)/8)+1)*8);
-                }
-                else{
-                    place_curseur(LIGNE,79);
-                }
-                break;
-            case 10: // \n Déplace le curseur sur la ligne suivante, colonne 0
-                if(LIGNE<25){
-                    place_curseur(LIGNE+1,0);
-                }
-                break;
-            case 12: // \f Efface l’écran et place le curseur sur la colonne 0 de la ligne 0
-                efface_ecran();
-                place_curseur(0,0);
-                break;
-            case 13: // \r Déplace le curseur sur la ligne actuelle, colonne 0
-                place_curseur(LIGNE,0);
-                break;
-            default:
-                break;
-        }
+
+    place_curseur(lig, col);
+
+    if (col == 80)
+    {
+        lig++;
+        col = 0;
+    }
+
+    if (lig == 25)
+    {
+        defilement();
+        lig = 24;
     }
 }
 
-void defilement(void){
+void defilement(void)
+{
+    // on utilise memmvoe pr deplacer les lignes de 1 q 25 d'un rang
+    //memmove(ptr_mem(0, 0), ptr_mem(1, 0), 80 * 24 * 2);
+
+    //for (int i = 0; i < 80; ++i) {
+    //    ecrit_car(24,i,' ',0,15);
+    //}
     for (uint8_t ligne = 0; ligne < 25; ligne++) // pour chaque ligne
     {
         memmove(ptr_mem(ligne,0),ptr_mem(ligne+1,0),80*2); // on deplace la ligne d'apres sur celle la
     }
     memset(ptr_mem(25,0),20,80*2); // efface la dernière ligne
-    LIGNE--;
-    place_curseur(LIGNE,COLONNE); // remonte le curseur
 }
 
-void console_putbytes(const char *s, int len){
+void console_putbytes(const char *s, int len)
+{
     for (int i = 0; i < len; i++)
     {
         traite_car(s[i]);
-        place_curseur(LIGNE,COLONNE);
     }
-
 }
 
 void affiche_etat(Process* process, int lig) {
@@ -139,6 +113,7 @@ void affiche_etat(Process* process, int lig) {
 
         // print le statut de ce process( qui est un enum State normalement un entier)
         ecrit_car(lig, 80 - 1, process->status + '0', 0, 15);
+
     }
 
 }
