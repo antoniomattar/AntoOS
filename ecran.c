@@ -77,8 +77,8 @@ void traite_car(char c)
 
     if (lig == 25)
     {
-        defilement();
-        lig = 24;
+        efface_ecran();
+        lig = 0;
     }
 }
 

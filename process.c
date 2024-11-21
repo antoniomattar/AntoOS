@@ -100,6 +100,7 @@ int32_t cree_processus(void (*code)(void), char *nom)
     new_process->status = AVAILABLE;
     new_process->call_stack[CALL_STACK_SIZE - 1] = (uint32_t)code;
     new_process->saved_registers[1] = (uint32_t) & (new_process->call_stack[CALL_STACK_SIZE - 1]);
+    // new_process->wakeup_time = 0;
 
     processes_table[current_process_pid] = new_process;
     if (current_process_pid != 0)
@@ -259,6 +260,8 @@ void ordonnance()
     }
 
     current_process = process_to_be_activated;
+    // if (current_process->pid != 0)
+    //     insert_to_waiting_processes(process_to_be_slept);
 
     ctx_sw(((uint32_t *)process_to_be_slept->saved_registers),
            ((uint32_t *)current_process->saved_registers));
