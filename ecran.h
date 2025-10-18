@@ -8,7 +8,7 @@
 
 unsigned short *ptr_mem(unsigned int lig, unsigned int col);
 
-void ecrit_car(unsigned  int lig, unsigned int col, char c, unsigned int fond, unsigned int police);
+void ecrit_car(uint32_t lig, uint32_t col, char c, uint16_t fond, uint16_t police);
 
 void efface_ecran(void);
 
